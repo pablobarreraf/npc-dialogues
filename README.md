@@ -36,7 +36,11 @@
    - Maintains conversation memory in Redis to rehydrate context.
    - Publishes the response to Kafka (`dialogue-response-topic`) for consumption by the intent service.
 
-3. **Kafka**:
+3. **Redis**:
+
+   - Stores and retrieves conversation memory for context-aware dialogue generation.
+
+4. **Kafka**:
    - Facilitates asynchronous communication between the services (`intent-topic` and `dialogue-response-topic`).
 
 ---
@@ -61,24 +65,69 @@
 
 ---
 
-## **Postman Testing**
+## **Steps to Run the Application**
 
-- **Postman File**: Use the provided Postman collection to test the flow.
-- **Endpoint**: `/intent` (Intent Service)
-- **Expected Input**:
-  ```json
-  {
-    "input": "What swords do you sell?"
-  }
-  ```
-- **Expected Output**:
-  ```json
-  {
-    "message": "Response from dialogue service",
-    "intent": "general",
-    "dialogue": "We have steel, silver, and dragon swords available. Which one would you like to know more about?"
-  }
-  ```
+1. **Clone the Repository**:
+   ```bash
+   git clone <repository_url>
+   cd <repository_directory>
+   ```
+2. **Start the Services**:
+
+   - Use Docker to build and start the infrastructure:
+
+   ```bash
+   docker-compose up --build
+   ```
+
+   -This will start:
+
+   - Redis
+   - Kafka (along with Zookeeper)
+   - Intent Detection Service
+   - Dialogue Generation Service
+
+3. **Verify Services**:
+
+   - Ensure all containers are running:
+
+   ```bash
+   docker ps
+   ```
+
+   Set Environment Variables:
+
+   - Add the following to a .env file:
+
+   ```env
+   HUGGINGFACE_API_KEY=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
+   KAFKA_BROKER=kafka:9092
+   REDIS_URL=redis://redis:6379
+   ```
+
+4. **Test the Application**:
+
+   - Use Postman or any API client to test the /intent endpoint.
+
+   - Endpoint: http://localhost:3000/intent
+   - Method: POST
+   - Body:
+
+   ```json
+   {
+     "input": "What swords do you sell?"
+   }
+   ```
+
+   - Example response:
+
+   ```json
+   {
+     "message": "Response from dialogue service",
+     "intent": "general",
+     "dialogue": "We have steel, silver, and dragon swords available. Which one would you like to know more about?"
+   }
+   ```
 
 ## **Improvements**
 
@@ -136,5 +185,3 @@
 - Includes short-term memory for current conversations and long-term memory for key contextual elements (e.g., preferences or frequently asked questions).
 
 ---
-
-By organizing the infrastructure, memory, and improvements as outlined above, this application demonstrates a modular and extensible framework for interactive NPC dialogue systems.

@@ -1,5 +1,6 @@
 import { Kafka } from "kafkajs";
-import { generateDialogue } from "./services/dialogueService"; // Ensure generateDialogue is async
+import { generateDialogue } from "./services/dialogueService";
+import { initializeRedisClient, closeRedisClient } from "./utils/redisClient";
 
 const kafka = new Kafka({
   brokers: [process.env.KAFKA_BROKER || "kafka:9092"],
@@ -9,43 +10,61 @@ const consumer = kafka.consumer({ groupId: "dialogue-service-group" });
 const producer = kafka.producer();
 
 async function startDialogueService() {
-  await consumer.connect();
-  await producer.connect();
+  try {
+    // Initialize Redis
+    await initializeRedisClient();
 
-  // Subscribe to the intent-topic
-  await consumer.subscribe({ topic: "intent-topic", fromBeginning: false });
+    // Connect Kafka producer and consumer
+    await consumer.connect();
+    await producer.connect();
 
-  console.log("Listening to Kafka topic: intent-topic");
+    // Subscribe to the intent-topic
+    await consumer.subscribe({ topic: "intent-topic", fromBeginning: false });
 
-  await consumer.run({
-    eachMessage: async ({ message }) => {
-      const event = JSON.parse(message.value?.toString() || "{}");
-      const { input, intent, correlationId } = event;
+    console.log("Listening to Kafka topic: intent-topic");
 
-      console.log("Received event from Kafka:", event);
+    await consumer.run({
+      eachMessage: async ({ message }) => {
+        const event = JSON.parse(message.value?.toString() || "{}");
+        const { input, intent, correlationId } = event;
 
-      // Generate response with memory
-      const userId = "single_user"; // Static user ID for single-user app
-      const response = await generateDialogue(userId, input, intent);
+        console.log("Received event from Kafka:", event);
 
-      console.log("Generated Response:", response);
+        // Generate response with memory
+        const userId = "single_user"; // Static user ID for single-user app
+        const response = await generateDialogue(userId, input, intent);
 
-      // Publish response to dialogue-response-topic
-      const responseEvent = {
-        correlationId, // Include the same correlationId for tracking
-        response,
-      };
+        console.log("Generated Response:", response);
 
-      console.log("Publishing response to Kafka:", responseEvent);
+        // Publish response to dialogue-response-topic
+        const responseEvent = {
+          correlationId, // Include the same correlationId for tracking
+          response,
+        };
 
-      await producer.send({
-        topic: "dialogue-response-topic",
-        messages: [{ value: JSON.stringify(responseEvent) }],
-      });
-    },
-  });
+        console.log("Publishing response to Kafka:", responseEvent);
+
+        await producer.send({
+          topic: "dialogue-response-topic",
+          messages: [{ value: JSON.stringify(responseEvent) }],
+        });
+      },
+    });
+  } catch (error) {
+    console.error("Failed to start dialogue service:", error);
+    process.exit(1);
+  }
 }
 
-startDialogueService().catch((error) => {
-  console.error("Failed to start dialogue service:", error);
+// Gracefully close Redis on exit
+process.on("SIGINT", async () => {
+  await closeRedisClient();
+  process.exit(0);
 });
+
+process.on("SIGTERM", async () => {
+  await closeRedisClient();
+  process.exit(0);
+});
+
+startDialogueService();

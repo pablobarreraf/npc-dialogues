@@ -36,9 +36,15 @@ async function callHuggingFaceAPI(prompt: string): Promise<string> {
       }
     );
 
-    const generatedText =
-      response.data[0]?.generated_text || "No response generated.";
-    return generatedText.trim();
+    let generatedText = response.data[0]?.generated_text || "";
+    
+    // Clean up the response by removing the prompt and any system-like text
+    generatedText = generatedText
+      .replace(prompt, '')
+      .replace(/User:|Intent:|Response:|As a medieval market merchant,|Previous context:/gi, '')
+      .trim();
+
+    return generatedText || "I apologize, but I couldn't generate a proper response.";
   } catch (error) {
     console.error("Error calling Hugging Face API:", error);
     return "An error occurred while generating a response.";
@@ -51,55 +57,40 @@ export async function generateDialogue(
   input: string,
   intent: DialogueIntent
 ): Promise<string> {
-  // Retrieve memory from Redis
   const memoryKey = `user:${userId}:memory`;
-  const memory = await getMemory(memoryKey);
+  const memory = await getMemory(memoryKey) || [];
 
-  // Build memory context
-  const MAX_MEMORY_RECORDS = 5; // Limit the number of memory records
+  // Only use context if the last interactions had the same intent
+  const recentContext = memory
+    .filter((entry: any) => entry.intent === intent)  // Only keep matching intents
+    .slice(-2)  // Get last 2 matching exchanges
+    .map((entry: any) => entry.response)
+    .join("\n");
 
-  const memoryContext = memory
-    ? memory
-        .filter((entry: any) => entry.intent === intent) // Include only relevant intent
-        .slice(-MAX_MEMORY_RECORDS) // Take the last MAX_MEMORY_RECORDS entries
-        .map(
-          (entry: any) =>
-            `User: ${entry.input}\nIntent: ${entry.intent}\nResponse: ${entry.response}`
-        )
-        .join("\n")
-    : "";
-
-  // Craft a prompt based on the intent and include memory context
+  const baseContext = "You are a medieval sword merchant in a fantasy market. You sell various types of swords including longswords, shortswords, broadswords, and rapiers.";
+  
   let prompt: string;
   switch (intent) {
-    case "lore":
-      prompt = `${memoryContext}\nIn this medieval fantasy world, tell me about the history and legends of ${input}. Respond in the style of a wise scholar.`;
+    case "general":
+      prompt = `${baseContext}\n${recentContext ? `Previous context: ${recentContext}\n\n` : ''}Customer says: ${input}\nRespond as the merchant.`;
       break;
     case "bargaining":
-      prompt = `${memoryContext}\nAs a medieval market merchant, respond to a customer interested in ${input}. Set a price and be willing to negotiate. Keep the tone medieval and merchant-like.`;
+      prompt = `${baseContext}\nPrevious context: ${recentContext}\n\nCustomer asks: ${input}\nRespond as the merchant, discussing prices and being willing to negotiate.`;
       break;
-    case "general":
-      prompt = `${memoryContext}\nYou are a medieval villager. Answer this question about ${input}. Keep your response friendly and in-character for a medieval fantasy setting.`;
+    case "lore":
+      prompt = `${baseContext}\nPrevious context: ${recentContext}\n\nCustomer asks: ${input}\nRespond as the merchant, telling me about the history and legends of ${input}.`;
       break;
     case "crafting":
-      prompt = `${memoryContext}\nAs a medieval craftsperson, explain the process of creating ${input}. Include materials and methods that would exist in a medieval fantasy world.`;
+      prompt = `${baseContext}\nPrevious context: ${recentContext}\n\nCustomer asks: ${input}\nRespond as the merchant, explaining the process of creating ${input}.`;
       break;
     default:
-      prompt = `${memoryContext}\nAs a medieval village resident, respond to this question about ${input}. Keep your response within the context of a medieval fantasy world.`;
+      prompt = `${baseContext}\nPrevious context: ${recentContext}\n\nCustomer asks: ${input}\nRespond as the merchant.`;
   }
 
-  // Call the Hugging Face API with the crafted prompt
   const response = await callHuggingFaceAPI(prompt);
-
-  // Update memory in Redis
-  const newMemory = memory || [];
-  newMemory.push({ input, intent, response });
-
-  // Limit memory to the last 5 exchanges
-  if (newMemory.length > 5) {
-    newMemory.shift();
-  }
-
+  
+  // Store the interaction in memory
+  const newMemory = [...memory, { input, intent, response }].slice(-5);
   await setMemory(memoryKey, newMemory);
 
   return response;
