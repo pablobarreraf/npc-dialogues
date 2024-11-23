@@ -35,8 +35,6 @@ export async function getIntent(input: string): Promise<IntentResponse> {
       },
     });
 
-    console.log("response:", response);
-
     // Success case
     const result = response.data as ClassificationResponse;
     const maxScoreIndex = result.scores.indexOf(Math.max(...result.scores));
