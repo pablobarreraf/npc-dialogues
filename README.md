@@ -94,6 +94,8 @@ async def feedback(request: Request):
     return {"message": "Feedback received"}
 
 
+Was unsure if I should create a separate service for the memory with Redis, I kept it in the dialogue service for practicity.
+
 # Intent Detection Service
 
 ## Expect

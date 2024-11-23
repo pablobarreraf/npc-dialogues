@@ -1,4 +1,11 @@
 services:
+
+  redis:
+    image: redis
+    container_name: redis
+    ports:
+      - "6379:6379"
+
   zookeeper:
     image: confluentinc/cp-zookeeper:latest
     container_name: zookeeper
