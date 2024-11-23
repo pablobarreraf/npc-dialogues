@@ -1,3 +1,4 @@
+import { getMemory, setMemory } from "../utils/redisClient";
 import axios from "axios";
 import dotenv from "dotenv";
 
@@ -35,47 +36,71 @@ async function callHuggingFaceAPI(prompt: string): Promise<string> {
       }
     );
 
-    // Extract the generated text and remove the prompt from the response
-    const generatedText = response.data[0]?.generated_text;
-    if (!generatedText) {
-      console.error("No generated_text found in the API response.");
-      return "I couldn't come up with a response.";
-    }
-
-    // Clean up the response by removing the prompt
-    const cleanedResponse = generatedText.replace(prompt, '').trim();
-    return cleanedResponse;
+    const generatedText =
+      response.data[0]?.generated_text || "No response generated.";
+    return generatedText.trim();
   } catch (error) {
     console.error("Error calling Hugging Face API:", error);
-    return "Something went wrong while generating a response.";
+    return "An error occurred while generating a response.";
   }
 }
 
 // Generate dialogue based on the intent and input
 export async function generateDialogue(
+  userId: string,
   input: string,
   intent: DialogueIntent
 ): Promise<string> {
-  let prompt: string;
+  // Retrieve memory from Redis
+  const memoryKey = `user:${userId}:memory`;
+  const memory = await getMemory(memoryKey);
 
-  // Craft a prompt based on the intent
+  // Build memory context
+  const MAX_MEMORY_RECORDS = 5; // Limit the number of memory records
+
+  const memoryContext = memory
+    ? memory
+        .filter((entry: any) => entry.intent === intent) // Include only relevant intent
+        .slice(-MAX_MEMORY_RECORDS) // Take the last MAX_MEMORY_RECORDS entries
+        .map(
+          (entry: any) =>
+            `User: ${entry.input}\nIntent: ${entry.intent}\nResponse: ${entry.response}`
+        )
+        .join("\n")
+    : "";
+
+  // Craft a prompt based on the intent and include memory context
+  let prompt: string;
   switch (intent) {
     case "lore":
-      prompt = `In this medieval fantasy world, tell me about the history and legends of ${input}. Respond in the style of a wise scholar.`;
+      prompt = `${memoryContext}\nIn this medieval fantasy world, tell me about the history and legends of ${input}. Respond in the style of a wise scholar.`;
       break;
     case "bargaining":
-      prompt = `As a medieval market merchant, respond to a customer interested in ${input}. Set a price and be willing to negotiate. Keep the tone medieval and merchant-like.`;
+      prompt = `${memoryContext}\nAs a medieval market merchant, respond to a customer interested in ${input}. Set a price and be willing to negotiate. Keep the tone medieval and merchant-like.`;
       break;
     case "general":
-      prompt = `You are a medieval villager. Answer this question about ${input}. Keep your response friendly and in-character for a medieval fantasy setting.`;
+      prompt = `${memoryContext}\nYou are a medieval villager. Answer this question about ${input}. Keep your response friendly and in-character for a medieval fantasy setting.`;
       break;
     case "crafting":
-      prompt = `As a medieval craftsperson, explain the process of creating ${input}. Include materials and methods that would exist in a medieval fantasy world.`;
+      prompt = `${memoryContext}\nAs a medieval craftsperson, explain the process of creating ${input}. Include materials and methods that would exist in a medieval fantasy world.`;
       break;
     default:
-      prompt = `As a medieval village resident, respond to this question about ${input}. Keep your response within the context of a medieval fantasy world.`;
+      prompt = `${memoryContext}\nAs a medieval village resident, respond to this question about ${input}. Keep your response within the context of a medieval fantasy world.`;
   }
 
   // Call the Hugging Face API with the crafted prompt
-  return await callHuggingFaceAPI(prompt);
+  const response = await callHuggingFaceAPI(prompt);
+
+  // Update memory in Redis
+  const newMemory = memory || [];
+  newMemory.push({ input, intent, response });
+
+  // Limit memory to the last 5 exchanges
+  if (newMemory.length > 5) {
+    newMemory.shift();
+  }
+
+  await setMemory(memoryKey, newMemory);
+
+  return response;
 }

@@ -1,104 +1,140 @@
--- GIT
+# **Interactive Dialogue System**
 
-1. I used the same main branch, tried to create the most amount of commits possible to show the different stages of the development.
+## **General Overview**
 
-This is a single user application, meaning theres no login or user identification, the memory of the conversations is based on the complete history, to reset the memory we need to manually delete it for the application to forget that context.
+- **Single User Context**:
 
-This is a server application so I accomodated the code in a way that the response can be seen in the postman call for demonstration purposes, usually with this type of infrastructure we would use a websocket connection to send the response to the client and dont wait for the response on the same endpoint.
+  - This is a single-user application with no login or user identification.
+  - The conversation memory is based on the complete history of interactions.
+  - Resetting memory requires manually deleting the stored memory.
 
-Currently using pretrained models, but we can train our own model to improve the accuracy of the intent detection and dialogue generation. Will add memory to rehydrate the context of the conversation.
+- **Infrastructure**:
 
-With enough GPU we could use our own trained model to improve the responses, latency and fine-tune the model to our needs and we would consume this model in the dialogue generation service.
+  - This is a server-based application designed for demonstration through Postman.
+  - Typically, such systems would use a WebSocket connection to handle asynchronous responses instead of waiting on the same endpoint.
 
-Example of hosting our fined-tuned model based on DialoGPT:
+- **Pretrained Models**:
+  - The system uses pretrained models (like Hugging Face's `DialoGPT-medium` or `Falcon`) for intent detection and dialogue generation.
+  - Future iterations could fine-tune these models to improve accuracy, reduce latency, and better align with specific application needs.
 
-```python
-from transformers import AutoModelForCausalLM, AutoTokenizer
-from fastapi import FastAPI, Request
+---
 
-app = FastAPI()
+## **Infrastructure Design and Flow**
 
-# Load the model and tokenizer
-model_name = "microsoft/DialoGPT-medium"
-tokenizer = AutoTokenizer.from_pretrained(model_name)
-model = AutoModelForCausalLM.from_pretrained(model_name)
+### **Components**
 
-@app.post("/generate")
-async def generate_response(request: Request):
-data = await request.json()
-input_text = data.get("input", "")
+1. **Intent Detection Service**:
 
-    # Tokenize input and generate response
-    inputs = tokenizer.encode(input_text, return_tensors="pt")
-    outputs = model.generate(inputs, max_length=150, pad_token_id=tokenizer.eos_token_id)
-    response = tokenizer.decode(outputs[0], skip_special_tokens=True)
+   - Uses a Hugging Face model for intent detection.
+   - Processes the user input, identifies the intent, and publishes the event to Kafka (`intent-topic`) with a correlation ID.
+   - Awaits the dialogue generation response via Kafka (`dialogue-response-topic`) and returns it to the client.
 
-    return {"response": response}
+2. **Dialogue Generation Service**:
 
-// Fine-Tune the model
+   - Listens to Kafka (`intent-topic`) for new messages.
+   - Generates responses based on the detected intent using a Hugging Face model.
+   - Maintains conversation memory in Redis to rehydrate context.
+   - Publishes the response to Kafka (`dialogue-response-topic`) for consumption by the intent service.
 
-from transformers import AutoTokenizer, AutoModelForCausalLM, Trainer, TrainingArguments
+3. **Kafka**:
+   - Facilitates asynchronous communication between the services (`intent-topic` and `dialogue-response-topic`).
 
-# Load model and tokenizer
-model_name = "microsoft/DialoGPT-medium"
-tokenizer = AutoTokenizer.from_pretrained(model_name)
-model = AutoModelForCausalLM.from_pretrained(model_name)
+---
 
-# Prepare dataset
-from datasets import load_dataset
-dataset = load_dataset("json", data_files="new_dialogues.json")
+### **Flow**
 
-# Tokenize dataset
-def preprocess_function(examples):
-    return tokenizer(examples["input"], text_pair=examples["response"], truncation=True)
+1. **Input Handling**:
 
-tokenized_dataset = dataset.map(preprocess_function, batched=True)
+   - User sends input via the `/intent` endpoint.
+   - The intent detection service preprocesses input and determines intent.
 
-# Fine-tune model
-training_args = TrainingArguments(
-    output_dir="./fine_tuned_model",
-    num_train_epochs=3,
-    per_device_train_batch_size=4,
-    save_steps=10_000,
-    save_total_limit=2,
-)
+2. **Kafka Event**:
 
-trainer = Trainer(
-    model=model,
-    args=training_args,
-    train_dataset=tokenized_dataset["train"],
-)
+   - Publishes an event to Kafka containing the input, detected intent, and correlation ID.
 
-trainer.train()
+3. **Dialogue Generation**:
 
-# Save fine-tuned model
-model.save_pretrained("./fine_tuned_model")
-tokenizer.save_pretrained("./fine_tuned_model")
+   - Dialogue generation service receives the Kafka event, generates a response using context-aware memory, and publishes it back to Kafka.
 
-# Save feedback
-@app.post("/feedback")
-async def feedback(request: Request):
-    data = await request.json()
-    user_input = data.get("input", "")
-    model_response = data.get("response", "")
-    feedback = data.get("feedback", "")  # e.g., "positive" or "negative"
+4. **Response Handling**:
+   - The intent detection service consumes the response and sends it back to the client.
 
-    # Save feedback for training
-    with open("feedback_log.json", "a") as f:
-        f.write(json.dumps({
-            "input": user_input,
-            "response": model_response,
-            "feedback": feedback
-        }) + "\n")
+---
 
-    return {"message": "Feedback received"}
+## **Postman Testing**
 
+- **Postman File**: Use the provided Postman collection to test the flow.
+- **Endpoint**: `/intent` (Intent Service)
+- **Expected Input**:
+  ```json
+  {
+    "input": "What swords do you sell?"
+  }
+  ```
+- **Expected Output**:
+  ```json
+  {
+    "message": "Response from dialogue service",
+    "intent": "general",
+    "dialogue": "We have steel, silver, and dragon swords available. Which one would you like to know more about?"
+  }
+  ```
 
-Was unsure if I should create a separate service for the memory with Redis, I kept it in the dialogue service for practicity.
+## **Improvements**
 
-# Intent Detection Service
+### **Enhanced Memory Management**
 
-## Expect
+- Use **Redis** for scalable, distributed memory to handle conversation context efficiently.
+- Implement intelligent memory decay or pruning for old conversations to avoid overloading prompts.
 
-- The huggingface model sometimes is slow to load.
-```
+### **Custom Fine-Tuned Models**
+
+- Fine-tune models like `DialoGPT` on domain-specific data for better accuracy and responses aligned with the application's theme (e.g., medieval fantasy RPG).
+
+### **WebSocket Support**
+
+- Replace the synchronous response mechanism with WebSocket connections for real-time dialogue updates, enhancing user experience.
+
+### **Multi-User Support**
+
+- Transition the system to a multi-user application by introducing user session IDs and isolating memory contexts per user.
+
+---
+
+## **Potential Limitations**
+
+### **Model Latency**
+
+- Hugging Face models can be slow to load initially.
+- Mitigate this by keeping models warm or hosting them on a dedicated server with GPU support.
+
+### **Prompt Size**
+
+- Large memory contexts can exceed model input limits.
+- Address this by summarizing or limiting the memory added to the prompt.
+
+### **Single User Design**
+
+- This infrastructure assumes a single user. For production-grade applications, multi-user support will be necessary.
+
+---
+
+## **Additional Notes**
+
+### **Hosting Fine-Tuned Models**
+
+- With sufficient GPU resources, hosting fine-tuned models would allow tighter control over responses, reduced latency, and alignment with application needs.
+- The application supports pretraining feedback loops to improve responses dynamically by incorporating user-provided feedback.
+
+### **Feedback Collection**
+
+- Implement a `/feedback` endpoint to gather user feedback on generated responses.
+- This feedback can be used for further fine-tuning and improving the system.
+
+### **Memory Scenarios**
+
+- Includes short-term memory for current conversations and long-term memory for key contextual elements (e.g., preferences or frequently asked questions).
+
+---
+
+By organizing the infrastructure, memory, and improvements as outlined above, this application demonstrates a modular and extensible framework for interactive NPC dialogue systems.

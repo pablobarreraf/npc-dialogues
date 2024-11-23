@@ -1,0 +1,45 @@
+{
+	"info": {
+		"_postman_id": "352c9a49-8120-44b2-b55c-e4e9ec01e6a6",
+		"name": "NPC Conversation",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+		"_exporter_id": "692181",
+		"_collection_link": "https://red-desert-834436.postman.co/workspace/NPCS-Services~2a609add-2529-4d9a-824c-8fb844ef6518/collection/692181-352c9a49-8120-44b2-b55c-e4e9ec01e6a6?action=share&source=collection_link&creator=692181"
+	},
+	"item": [
+		{
+			"name": "Write to the NPC!",
+			"request": {
+				"method": "POST",
+				"header": [
+					{
+						"key": "Content-Type",
+						"value": "application/json"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\"input\": \"Hello! Tell me about this magic town\"}",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": {
+					"raw": "http://localhost:3000/intent",
+					"protocol": "http",
+					"host": [
+						"localhost"
+					],
+					"port": "3000",
+					"path": [
+						"intent"
+					]
+				},
+				"description": "Generated from cURL: curl -X POST http://localhost:3000/intent \\\n-H \"Content-Type: application/json\" \\\n-d '{\"input\": \"Tell me about the enchanted blade\"}'"
+			},
+			"response": []
+		}
+	]
+}
