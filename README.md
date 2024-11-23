@@ -100,7 +100,7 @@
    - Add the following to a .env file:
 
    ```env
-   HUGGINGFACE_API_KEY=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
+   HUGGINGFACE_API_KEY=<at first added a test key but I deleted it let me know if you have one or I can provide a new one>
    KAFKA_BROKER=kafka:9092
    REDIS_URL=redis://redis:6379
    ```
