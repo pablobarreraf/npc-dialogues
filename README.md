@@ -69,8 +69,8 @@
 
 1. **Clone the Repository**:
    ```bash
-   git clone <repository_url>
-   cd <repository_directory>
+   git clone [<repository_url>](https://github.com/pablobarreraf/npc-dialogues.git)
+   cd [<repository_directory>](https://github.com/pablobarreraf/npc-dialogues.git)
    ```
 2. **Start the Services**:
 
